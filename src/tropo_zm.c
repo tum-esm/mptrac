@@ -103,7 +103,7 @@ int main(
       /* Get time from filename... */
       if (!init) {
 	init = 1;
-	time0 = time_from_filename(argv[iarg], 13);
+	time0 = time_from_filename(argv[iarg], 13, /*with_seconds */ 0);
       }
 
       /* Read data... */
