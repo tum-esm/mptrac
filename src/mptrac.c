@@ -115,6 +115,7 @@ double clim_oh(
 void clim_oh_diurnal_correction(
   const ctl_t *ctl,
   clim_t *clim) {
+  if (ctl->met_coord_type != 0) ERRMSG("Only lat/lon grid supported");
 
   /* Set SZA threshold... */
   const double sza_thresh = DEG2RAD(85.), cos_sza_thresh = cos(sza_thresh);
@@ -466,6 +467,9 @@ void compress_cms(
   const size_t np,
   const int decompress,
   FILE *inout) {
+
+  if (ctl->met_coord_type != 0)
+    ERRMSG("Only met_coord_type=0 (lat/lon grid) supported");
 
   /* Set lon-lat grid... */
   const size_t nxy = nx * ny;
@@ -1268,6 +1272,31 @@ void intpol_check_lon_lat(
 
 /*****************************************************************************/
 
+void intpol_check_cartesian(
+  const double *lons,
+  const int nlon,
+  const double *lats,
+  const int nlat,
+  const double lon,
+  const double lat,
+  double *lon2,
+  double *lat2) {
+
+  *lon2 = lon;
+  if (lons[0] < lons[nlon - 1])
+    *lon2 = MIN(MAX(lon, lons[0]), lons[nlon - 1]);
+  else
+    *lon2 = MIN(MAX(lon, lons[nlon - 1]), lons[0]);
+
+  *lat2 = lat;
+  if (lats[0] < lats[nlat - 1])
+    *lat2 = MIN(MAX(lat, lats[0]), lats[nlat - 1]);
+  else
+    *lat2 = MIN(MAX(lat, lats[nlat - 1]), lats[0]);
+}
+
+/*****************************************************************************/
+
 void intpol_met_4d_coord(
   const met_t *met0,
   float heights0[EX][EY][EP],
@@ -1288,8 +1317,13 @@ void intpol_met_4d_coord(
 
     /* Check longitude and latitude... */
     double lon2, lat2;
-    intpol_check_lon_lat(met0->lon, met0->nx, met0->lat, met0->ny, lon, lat,
+
+    if (met0->coord_type == 0)
+        intpol_check_lon_lat(met0->lon, met0->nx, met0->lat, met0->ny, lon, lat,
 			 &lon2, &lat2);
+    else
+      intpol_check_cartesian(met0->lon, met0->nx, met0->lat, met0->ny, lon, lat,
+       &lon2, &lat2);
 
     /* Get horizontal indizes... */
     ci[0] = locate_irr(met0->lon, met0->nx, lon2);
@@ -1456,8 +1490,13 @@ void intpol_met_space_3d(
 
     /* Check longitude and latitude... */
     double lon2, lat2;
+
+    if (met->coord_type == 0)
     intpol_check_lon_lat(met->lon, met->nx, met->lat, met->ny, lon, lat,
 			 &lon2, &lat2);
+    else
+      intpol_check_cartesian(met->lon, met->nx, met->lat, met->ny, lon, lat,
+       &lon2, &lat2);
 
     /* Get interpolation indices... */
     ci[0] = locate_irr(met->p, met->np, p);
@@ -1509,8 +1548,13 @@ void intpol_met_space_3d_ml(
 
   /* Check longitude and latitude... */
   double lon2, lat2;
+
+  if (met->coord_type == 0)
   intpol_check_lon_lat(met->lon, met->nx, met->lat, met->ny, lon, lat, &lon2,
 		       &lat2);
+  else
+    intpol_check_cartesian(met->lon, met->nx, met->lat, met->ny, lon, lat,
+       &lon2, &lat2);
 
   /* Get horizontal indices... */
   const int ix = locate_reg(met->lon, met->nx, lon2);
@@ -1580,8 +1624,14 @@ void intpol_met_space_2d(
 
     /* Check longitude and latitude... */
     double lon2, lat2;
+
+    if (met->coord_type == 0)
     intpol_check_lon_lat(met->lon, met->nx, met->lat, met->ny, lon, lat,
 			 &lon2, &lat2);
+    else
+      intpol_check_cartesian(met->lon, met->nx, met->lat, met->ny, lon, lat,
+       &lon2, &lat2);
+
 
     /* Get interpolation indices... */
     ci[1] = locate_reg(met->lon, met->nx, lon2);
@@ -2223,8 +2273,8 @@ void module_advect(
 	  x[2] = atm->p[ip];
 	} else {
 	  dts = (i == 3 ? 1.0 : 0.5) * cache->dt[ip];
-	  x[0] = atm->lon[ip] + DX2DEG(dts * u[i - 1] / 1000., atm->lat[ip]);
-	  x[1] = atm->lat[ip] + DY2DEG(dts * v[i - 1] / 1000.);
+	  x[0] = atm->lon[ip] + DX2COORD(met0, dts * u[i - 1], atm->lat[ip]);
+	  x[1] = atm->lat[ip] + DY2COORD(met0, dts * v[i - 1]);
 	  x[2] = atm->p[ip] + dts * w[i - 1];
 	}
 	const double tm = atm->time[ip] + dts;
@@ -2265,9 +2315,9 @@ void module_advect(
 
       /* Set new position... */
       atm->time[ip] += cache->dt[ip];
-      atm->lon[ip] += DX2DEG(cache->dt[ip] * um / 1000.,
+      atm->lon[ip] += DX2COORD(met0, cache->dt[ip] * um,
 			     (ctl->advect == 2 ? x[1] : atm->lat[ip]));
-      atm->lat[ip] += DY2DEG(cache->dt[ip] * vm / 1000.);
+      atm->lat[ip] += DY2COORD(met0, cache->dt[ip] * vm);
       atm->p[ip] += cache->dt[ip] * wm;
     }
   }
@@ -2300,8 +2350,8 @@ void module_advect(
 	  x[2] = atm->q[ctl->qnt_zeta][ip];
 	} else {
 	  dts = (i == 3 ? 1.0 : 0.5) * cache->dt[ip];
-	  x[0] = atm->lon[ip] + DX2DEG(dts * u[i - 1] / 1000., atm->lat[ip]);
-	  x[1] = atm->lat[ip] + DY2DEG(dts * v[i - 1] / 1000.);
+	  x[0] = atm->lon[ip] + DX2COORD(met0, dts * u[i - 1], atm->lat[ip]);
+	  x[1] = atm->lat[ip] + DY2COORD(met0, dts * v[i - 1]);
 	  x[2] = atm->q[ctl->qnt_zeta][ip] + dts * zeta_dot[i - 1];
 	}
 	const double tm = atm->time[ip] + dts;
@@ -2328,9 +2378,9 @@ void module_advect(
 
       /* Set new position... */
       atm->time[ip] += cache->dt[ip];
-      atm->lon[ip] += DX2DEG(cache->dt[ip] * um / 1000.,
+      atm->lon[ip] += DX2COORD(met0, cache->dt[ip] * um,
 			     (ctl->advect == 2 ? x[1] : atm->lat[ip]));
-      atm->lat[ip] += DY2DEG(cache->dt[ip] * vm / 1000.);
+      atm->lat[ip] += DY2COORD(met0, cache->dt[ip] * vm);
       atm->q[ctl->qnt_zeta][ip] += cache->dt[ip] * zeta_dotm;
 
       /* Convert zeta to pressure... */
@@ -2473,6 +2523,8 @@ void module_chem_grid(
   met_t *met1,
   atm_t *atm,
   const double tt) {
+
+  if (met0->coord_type != 0) ERRMSG("Only lat/lon grid supported");
 
   /* Check quantities... */
   if (ctl->qnt_m < 0 || ctl->qnt_Cx < 0)
@@ -2840,12 +2892,12 @@ void module_diff_meso(
 	(float) (r * cache->uvwp[ip][0] +
 		 r2 * cache->rs[3 * ip] * ctl->turb_mesox * usig);
       atm->lon[ip] +=
-	DX2DEG(cache->uvwp[ip][0] * cache->dt[ip] / 1000., atm->lat[ip]);
+	DX2COORD(met0, cache->uvwp[ip][0] * cache->dt[ip], atm->lat[ip]);
 
       cache->uvwp[ip][1] =
 	(float) (r * cache->uvwp[ip][1] +
 		 r2 * cache->rs[3 * ip + 1] * ctl->turb_mesox * vsig);
-      atm->lat[ip] += DY2DEG(cache->uvwp[ip][1] * cache->dt[ip] / 1000.);
+      atm->lat[ip] += DY2COORD(met0, cache->uvwp[ip][1] * cache->dt[ip]);
     }
 
     /* Calculate vertical mesoscale wind fluctuations... */
@@ -2976,8 +3028,8 @@ void module_diff_pbl(
 
     /* Calculate new air parcel position... */
     atm->lon[ip] +=
-      DX2DEG(cache->uvwp[ip][0] * cache->dt[ip] / 1000., atm->lat[ip]);
-    atm->lat[ip] += DY2DEG(cache->uvwp[ip][1] * cache->dt[ip] / 1000.);
+      DX2COORD(met0, cache->uvwp[ip][0] * cache->dt[ip], atm->lat[ip]);
+    atm->lat[ip] += DY2COORD(met0, cache->uvwp[ip][1] * cache->dt[ip]);
     atm->p[ip] +=
       DZ2DP(cache->uvwp[ip][2] * cache->dt[ip] / 1000., atm->p[ip]);
   }
@@ -3022,9 +3074,9 @@ void module_diff_turb(
 
     /* Horizontal turbulent diffusion... */
     if (dx > 0) {
-      const double sigma = sqrt(2.0 * dx * fabs(cache->dt[ip])) / 1000.;
-      atm->lon[ip] += DX2DEG(cache->rs[3 * ip] * sigma, atm->lat[ip]);
-      atm->lat[ip] += DY2DEG(cache->rs[3 * ip + 1] * sigma);
+      const double sigma = sqrt(2.0 * dx * fabs(cache->dt[ip]));
+      atm->lon[ip] += DX2COORD(met0, cache->rs[3 * ip] * sigma, atm->lat[ip]);
+      atm->lat[ip] += DY2COORD(met0, cache->rs[3 * ip + 1] * sigma);
     }
 
     /* Vertical turbulent diffusion... */
@@ -3107,6 +3159,8 @@ void module_h2o2_chem(
   met_t *met0,
   met_t *met1,
   atm_t *atm) {
+
+  if (ctl->met_coord_type != 0) ERRMSG("Only lat/lon grid supported");
 
   /* Set timer... */
   SELECT_TIMER("MODULE_H2O2_CHEM", "PHYSICS", NVTX_GPU);
@@ -3736,27 +3790,32 @@ void module_position(
     double ps;
     INTPOL_INIT;
 
-    /* Calculate modulo... */
-    atm->lon[ip] = FMOD(atm->lon[ip], 360.);
-    atm->lat[ip] = FMOD(atm->lat[ip], 360.);
+    if (met0->coord_type == 0) {
+      /* Calculate modulo... */
+      atm->lon[ip] = FMOD(atm->lon[ip], 360.);
+      atm->lat[ip] = FMOD(atm->lat[ip], 360.);
 
-    /* Check latitude... */
-    while (atm->lat[ip] < -90 || atm->lat[ip] > 90) {
-      if (atm->lat[ip] > 90) {
-	atm->lat[ip] = 180 - atm->lat[ip];
-	atm->lon[ip] += 180;
+      /* Check latitude... */
+      while (atm->lat[ip] < -90 || atm->lat[ip] > 90) {
+        if (atm->lat[ip] > 90) {
+          atm->lat[ip] = 180 - atm->lat[ip];
+          atm->lon[ip] += 180;
+        }
+        if (atm->lat[ip] < -90) {
+          atm->lat[ip] = -180 - atm->lat[ip];
+          atm->lon[ip] += 180;
+        }
       }
-      if (atm->lat[ip] < -90) {
-	atm->lat[ip] = -180 - atm->lat[ip];
-	atm->lon[ip] += 180;
-      }
+
+      /* Check longitude... */
+      while (atm->lon[ip] < -180)
+        atm->lon[ip] += 360;
+      while (atm->lon[ip] >= 180)
+        atm->lon[ip] -= 360;
+    } else {
+      intpol_check_cartesian(met0->lon, met0->nx, met0->lat, met0->ny, atm->lon[ip], atm->lat[ip], &atm->lon[ip], &atm->lat[ip]);
     }
 
-    /* Check longitude... */
-    while (atm->lon[ip] < -180)
-      atm->lon[ip] += 360;
-    while (atm->lon[ip] >= 180)
-      atm->lon[ip] -= 360;
 
     /* Check pressure... */
     if (atm->p[ip] < met0->p[met0->np - 1]) {
@@ -4124,6 +4183,8 @@ void module_tracer_chem(
   met_t *met0,
   met_t *met1,
   atm_t *atm) {
+
+  if (ctl->met_coord_type != 0) ERRMSG("Only lat/lon grid supported");
 
   /* Set timer... */
   SELECT_TIMER("MODULE_TRACER_CHEM", "PHYSICS", NVTX_GPU);
@@ -4512,6 +4573,9 @@ void mptrac_get_met(
 	WARN("Caching command failed!");
     }
   }
+
+  if ((*met0)->coord_type != (*met1)->coord_type)
+    ERRMSG("Coordinate types do not match!");
 
   /* Check that grids are consistent... */
   if ((*met0)->nx != 0 && (*met1)->nx != 0) {
@@ -4919,7 +4983,7 @@ void mptrac_read_ctl(
 #endif
       scan_ctl(filename, argc, argv, "QNT_UNIT", iq, "", ctl->qnt_unit[iq]);
   }
-
+  ctl->met_coord_type = (int) scan_ctl(filename, argc, argv, "MET_COORD_TYPE", -1, "0", NULL);
   /* Vertical coordinates and velocities... */
   ctl->advect_vert_coord =
     (int) scan_ctl(filename, argc, argv, "ADVECT_VERT_COORD", -1, "0", NULL);
@@ -6737,17 +6801,19 @@ int read_met_bin(
     ERRMSG("Error while reading time!");
 
   /* Read dimensions... */
+  met->coord_type = ctl->met_coord_type;
+
   FREAD(&met->nx, int,
 	1,
 	in);
-  LOG(2, "Number of longitudes: %d", met->nx);
+  LOG(2, "Number of %s: %d", (met->coord_type == 0)? "longitudes" : "x coordinates", met->nx);
   if (met->nx < 2 || met->nx > EX)
     ERRMSG("Number of longitudes out of range!");
 
   FREAD(&met->ny, int,
 	1,
 	in);
-  LOG(2, "Number of latitudes: %d", met->ny);
+  LOG(2, "Number of %s: %d", (met->coord_type == 0)? "latitudes" : "y coordinates", met->ny);
   if (met->ny < 2 || met->ny > EY)
     ERRMSG("Number of latitudes out of range!");
 
@@ -6981,6 +7047,8 @@ void read_met_cape(
   if (ctl->met_cape != 1)
     return;
 
+  if (ctl->met_coord_type != 0) ERRMSG("Only lat/lon grid supported");
+
   /* Set timer... */
   SELECT_TIMER("READ_MET_CAPE", "METPROC", NVTX_READ);
   LOG(2, "Calculate CAPE...");
@@ -7153,6 +7221,8 @@ void read_met_detrend(
   /* Check parameters... */
   if (ctl->met_detrend <= 0)
     return;
+
+  if (ctl->met_coord_type != 0) ERRMSG("Only lat/lon grid supported");
 
   /* Set timer... */
   SELECT_TIMER("READ_MET_DETREND", "METPROC", NVTX_READ);
@@ -9002,6 +9072,9 @@ int read_met_nc(
     return 0;
   }
 
+  /* Read coordinate system of meteo data... */
+  read_met_coord_type(ncid, ctl, met);
+
   /* Read coordinates of meteo data... */
   read_met_nc_grid(filename, ncid, ctl, met);
 
@@ -9336,6 +9409,38 @@ int read_met_nc_3d(
 
 /*****************************************************************************/
 
+void read_met_coord_type(
+  int ncid,
+  const ctl_t * ctl,
+  met_t * met) {
+
+  if (ctl->met_coord_type == -1) {
+    int idp;
+    int r = nc_inq_dimid(ncid, "lat", &idp);
+
+    if (r == NC_NOERR) {
+      met->coord_type = 0;
+      return;
+    }
+
+    r = nc_inq_dimid(ncid, "x", &idp);
+    if (r == NC_NOERR) {
+      met->coord_type = 1;
+      return;
+    }
+
+    ERRMSG("Could not detect met_coord_type!");
+  }
+
+  if (ctl->met_coord_type == 0 || ctl->met_coord_type == 1) {
+    met->coord_type = ctl->met_coord_type;
+  } else {
+    ERRMSG("Invalid met_coord_type: %d!", ctl->met_coord_type);
+  }
+}
+
+/*****************************************************************************/
+
 void read_met_nc_grid(
   const char *filename,
   const int ncid,
@@ -9400,20 +9505,35 @@ void read_met_nc_grid(
   LOG(2, "Time: %.2f (%d-%02d-%02d, %02d:%02d UTC)",
       met->time, year2, mon2, day2, hour2, min2);
 
-  /* Get grid dimensions... */
-  NC_INQ_DIM("lon", &met->nx, 2, EX);
-  LOG(2, "Number of longitudes: %d", met->nx);
+  if (met->coord_type == 0) {
+    /* Get grid dimensions... */
+    NC_INQ_DIM("lon", &met->nx, 2, EX);
+    LOG(2, "Number of longitudes: %d", met->nx);
 
-  NC_INQ_DIM("lat", &met->ny, 2, EY);
-  LOG(2, "Number of latitudes: %d", met->ny);
+    NC_INQ_DIM("lat", &met->ny, 2, EY);
+    LOG(2, "Number of latitudes: %d", met->ny);
 
-  /* Read longitudes and latitudes... */
-  NC_GET_DOUBLE("lon", met->lon, 1);
-  LOG(2, "Longitudes: %g, %g ... %g deg",
-      met->lon[0], met->lon[1], met->lon[met->nx - 1]);
-  NC_GET_DOUBLE("lat", met->lat, 1);
-  LOG(2, "Latitudes: %g, %g ... %g deg",
-      met->lat[0], met->lat[1], met->lat[met->ny - 1]);
+    /* Read longitudes and latitudes... */
+    NC_GET_DOUBLE("lon", met->lon, 1);
+    LOG(2, "Longitudes: %g, %g ... %g deg",
+        met->lon[0], met->lon[1], met->lon[met->nx - 1]);
+    NC_GET_DOUBLE("lat", met->lat, 1);
+    LOG(2, "Latitudes: %g, %g ... %g deg",
+        met->lat[0], met->lat[1], met->lat[met->ny - 1]);
+  } else {
+    NC_INQ_DIM("x", &met->nx, 2, EX);
+    LOG(2, "Number of x coordinates: %d", met->nx);
+
+    NC_INQ_DIM("y", &met->ny, 2, EY);
+    LOG(2, "Number of y coordinates: %d", met->ny);
+
+    NC_GET_DOUBLE("x", met->lon, 1);
+    LOG(2, "x coordinates: %g, %g ... %g m", met->lon[0], met->lon[1], met->lon[met->nx - 1]);
+    NC_GET_DOUBLE("y", met->lat, 1);
+    LOG(2, "y coordinates: %g, %g ... %g m", met->lat[0], met->lat[1], met->lat[met->ny - 1]);
+  }
+
+
 
   /* Check grid spacing... */
   for (int ix = 2; ix < met->nx; ix++)
@@ -10025,6 +10145,8 @@ void read_met_polar_winds(
   SELECT_TIMER("READ_MET_POLAR_WINDS", "METPROC", NVTX_READ);
   LOG(2, "Apply fix for polar winds...");
 
+  if (met->coord_type != 0) return;
+
   /* Check latitudes... */
   if (fabs(met->lat[0]) < 89.999 || fabs(met->lat[met->ny - 1]) < 89.999)
     return;
@@ -10079,7 +10201,6 @@ void read_met_polar_winds(
 
 void read_met_pv(
   met_t *met) {
-
   double pows[EP];
 
   /* Set timer... */
@@ -10108,12 +10229,26 @@ void read_met_pv(
 
       /* Set auxiliary variables... */
       const double latr = 0.5 * (met->lat[iy1] + met->lat[iy0]);
-      const double dx = 1000. * DEG2DX(met->lon[ix1] - met->lon[ix0], latr);
-      const double dy = 1000. * DEG2DY(met->lat[iy1] - met->lat[iy0]);
-      const double c0 = cos(DEG2RAD(met->lat[iy0]));
-      const double c1 = cos(DEG2RAD(met->lat[iy1]));
-      const double cr = cos(DEG2RAD(latr));
-      const double vort = 2 * 7.2921e-5 * sin(DEG2RAD(latr));
+      double dx, dy, c0, c1, cr, vort;
+
+      // Calculate potential vorticity..
+      if (met->coord_type == 0) { // coords are lat/lon
+        dx = 1000. * DEG2DX(met->lon[ix1] - met->lon[ix0], latr);
+        dy = 1000. * DEG2DY(met->lat[iy1] - met->lat[iy0]);
+        c0 = cos(DEG2RAD(met->lat[iy0]));
+        c1 = cos(DEG2RAD(met->lat[iy1]));
+        cr = cos(DEG2RAD(latr));
+        vort = 2 * 7.2921e-5 * sin(DEG2RAD(latr));
+      } else { // coords are in meters
+        dx = met->lon[ix1] - met->lon[ix0];
+        dy = met->lat[iy1] - met->lat[iy0];
+
+        c0 = 1.0;
+        c1 = 1.0;
+        cr = 1.0;
+
+        vort = 2 * 7.2921e-5 * sin(latr / (RE * 1000));
+      }
 
       /* Loop over grid points... */
       for (int ip = 0; ip < met->np; ip++) {
@@ -10416,6 +10551,7 @@ void read_met_tropo(
 
   /* Use tropopause climatology... */
   else if (ctl->met_tropo == 1) {
+    if (met->coord_type != 0) ERRMSG("Only lat/lon grid supported");
 #pragma omp parallel for default(shared) collapse(2)
     for (int ix = 0; ix < met->nx; ix++)
       for (int iy = 0; iy < met->ny; iy++)
@@ -11083,10 +11219,19 @@ void write_atm_asc(
   }
 
   /* Write header... */
-  fprintf(out,
-	  "# $1 = time [s]\n"
-	  "# $2 = altitude [km]\n"
-	  "# $3 = longitude [deg]\n" "# $4 = latitude [deg]\n");
+
+  if (ctl->met_coord_type == 0) {
+    fprintf(out,
+    "# $1 = time [s]\n"
+    "# $2 = altitude [km]\n"
+    "# $3 = longitude [deg]\n" "# $4 = latitude [deg]\n");
+  } else {
+    fprintf(out,
+      "# $1 = time [s]\n"
+    "# $2 = altitude [km]\n"
+    "# $3 = x [m]\n" "# $4 = y [m]\n");
+  }
+
   for (int iq = 0; iq < ctl->nq; iq++)
     fprintf(out, "# $%i = %s [%s]\n", iq + 5, ctl->qnt_name[iq],
 	    ctl->qnt_unit[iq]);
@@ -11100,8 +11245,14 @@ void write_atm_asc(
       continue;
 
     /* Write output... */
-    fprintf(out, "%.2f %g %g %g", atm->time[ip], Z(atm->p[ip]),
-	    atm->lon[ip], atm->lat[ip]);
+    fprintf(out, "%.2f %g ", atm->time[ip], Z(atm->p[ip]));
+
+    if (ctl->met_coord_type == 0) {
+      fprintf(out, "%g %g", atm->lon[ip], atm->lat[ip]);
+    } else {
+      fprintf(out, "%.2f %.2f", atm->lon[ip], atm->lat[ip]);
+    }
+
     for (int iq = 0; iq < ctl->nq; iq++) {
       fprintf(out, " ");
       if (ctl->atm_filter == 1 && (atm->time[ip] < t0 || atm->time[ip] > t1))
@@ -11434,6 +11585,8 @@ void write_csi(
   const atm_t *atm,
   const double t) {
 
+  if (ctl->met_coord_type != 0) ERRMSG("Only lat/lon grid supported");
+
   static FILE *out;
 
   static double *modmean, *obsmean, *obsstd, *rt, *rz, *rlon, *rlat, *robs,
@@ -11713,6 +11866,8 @@ void write_ens(
   const atm_t *atm,
   const double t) {
 
+  if (ctl->met_coord_type != 0) ERRMSG("Only lat/lon grid supported");
+
   static FILE *out;
 
   static double dummy, lat, lon, qm[NQ][NENS], qs[NQ][NENS], xm[NENS][3],
@@ -11811,6 +11966,8 @@ void write_grid(
   met_t *met1,
   const atm_t *atm,
   const double t) {
+
+  if (ctl->met_coord_type != 0) ERRMSG("Only lat/lon grid supported");
 
   static double kz[EP], kw[EP];
 
@@ -12473,15 +12630,25 @@ void write_met_nc(
   /* Define dimensions... */
   int tid, lonid, latid, levid;
   NC(nc_def_dim(ncid, "time", 1, &tid));
-  NC(nc_def_dim(ncid, "lon", (size_t) met->nx, &lonid));
-  NC(nc_def_dim(ncid, "lat", (size_t) met->ny, &latid));
+
+  if (met->coord_type == 0) {
+    NC(nc_def_dim(ncid, "lon", (size_t) met->nx, &lonid));
+    NC(nc_def_dim(ncid, "lat", (size_t) met->ny, &latid));
+    NC_DEF_VAR("lon", NC_DOUBLE, 1, &lonid, "longitude", "degrees_east", 0, 0);
+    NC_DEF_VAR("lat", NC_DOUBLE, 1, &latid, "latitude", "degrees_north", 0, 0);
+  } else {
+    NC(nc_def_dim(ncid, "x", (size_t) met->nx, &lonid));
+    NC(nc_def_dim(ncid, "y", (size_t) met->ny, &latid));
+    NC_DEF_VAR("x", NC_DOUBLE, 1, &lonid, "x", "easting", 0, 0);
+    NC_DEF_VAR("y", NC_DOUBLE, 1, &latid, "y", "northing", 0, 0);
+  }
+
   NC(nc_def_dim(ncid, "lev", (size_t) met->np, &levid));
 
   /* Define grid... */
   NC_DEF_VAR("time", NC_DOUBLE, 1, &tid, "time",
 	     "seconds since 2000-01-01 00:00:00 UTC", 0, 0);
-  NC_DEF_VAR("lon", NC_DOUBLE, 1, &lonid, "longitude", "degrees_east", 0, 0);
-  NC_DEF_VAR("lat", NC_DOUBLE, 1, &latid, "latitude", "degrees_north", 0, 0);
+
   NC_DEF_VAR("lev", NC_DOUBLE, 1, &levid, "pressure", "Pa", 0, 0);
 
   /* Define surface variables... */
@@ -12572,8 +12739,15 @@ void write_met_nc(
 
   /* Write grid data... */
   NC_PUT_DOUBLE("time", &met->time, 0);
-  NC_PUT_DOUBLE("lon", met->lon, 0);
-  NC_PUT_DOUBLE("lat", met->lat, 0);
+
+  if (met->coord_type == 0) {
+    NC_PUT_DOUBLE("lon", met->lon, 0);
+    NC_PUT_DOUBLE("lat", met->lat, 0);
+  } else {
+    NC_PUT_DOUBLE("x", met->lon, 0);
+    NC_PUT_DOUBLE("y", met->lat, 0);
+  }
+
   double phelp[EP];
   for (int ip = 0; ip < met->np; ip++)
     phelp[ip] = 100. * met->p[ip];
@@ -12690,6 +12864,8 @@ void write_prof(
   met_t *met1,
   const atm_t *atm,
   const double t) {
+
+  if (ctl->met_coord_type != 0) ERRMSG("Only lat/lon grid supported");
 
   static FILE *out;
 
@@ -12918,6 +13094,8 @@ void write_sample(
   const atm_t *atm,
   const double t) {
 
+  if (ctl->met_coord_type != 0) ERRMSG("Only lat/lon grid supported");
+
   static FILE *out;
 
   static double area, dlat, rmax2, *rt, *rz, *rlon, *rlat, *robs, kz[EP],
@@ -13078,6 +13256,8 @@ void write_station(
   atm_t *atm,
   const double t) {
 
+  if (ctl->met_coord_type != 0) ERRMSG("Only lat/lon grid supported");
+
   static FILE *out;
 
   static double rmax2, x0[3], x1[3];
@@ -13163,6 +13343,8 @@ void write_vtk(
   const ctl_t *ctl,
   const atm_t *atm,
   const double t) {
+
+  if (ctl->met_coord_type != 0) ERRMSG("Only lat/lon grid supported");
 
   FILE *out;
 

@@ -640,6 +640,53 @@
   (-(dz) * (p) / H0)
 
 /**
+ * @brief Convert a distance in meters to a coordinate value based on grid type.
+ *
+ * This macro converts a distance in meters to either degrees longitude
+ * (for latitude/longitude grids) or keeps it as meters (for cartesian grids),
+ * depending on the coordinate system type specified in the met_t structure.
+ *
+ * For coord_type = 0 (latitude/longitude grid):
+ *   - Converts meters to kilometers
+ *   - Call DX2DEG() to convert to degrees
+ *
+ * For coord_type = 1 (Cartesian grid):
+ *   - Keeps input distance unchanged (in meters)
+ *
+ * @param met Pointer to met_t structure containing coordinate system information.
+ * @param dx Distance in meters to be converted.
+ * @param lat Latitude in degrees (used for degree conversion in lat/lon grids).
+ * @return Coordinate value in either degrees longitude (for coord_type=0)
+ *         or meters (for coord_type=1).
+ *
+ * @author Robin Brase
+ */
+#define DX2COORD(met, dx, lat) (((met)->coord_type == 0)? DX2DEG((dx) / 1000.0, (lat)) : ((dx) ))
+
+/**
+ * @brief Convert a distance to coordinate value based on grid type.
+ *
+ * This macro converts a distance in meters to either degrees latitude
+ * (for latitude/longitude grids) or keeps it as meters (for cartesian grids),
+ * depending on the coordinate system type specified in the met_t structure.
+ *
+ * For coord_type = 0 (latitude/longitude grid):
+ *   - Converts meters to kilometers
+ *   - Call DY2DEG() to convert to degrees
+ *
+ * For coord_type = 1 (Cartesian grid):
+ *   - Keeps input distance unchanged (in meters)
+ *
+ * @param met Pointer to met_t structure containing coordinate system information.
+ * @param dy Distance in meters to be converted.
+ * @return Coordinate value in either degrees latitude (for coord_type=0)
+ *         or meters (for coord_type=1).
+ *
+ * @author Robin Brase
+ */
+#define DY2COORD(met, dy)  (((met)->coord_type == 0)? DY2DEG((dy) / 1000.0) : ((dy) ))
+
+/**
  * @brief Calculate the distance between two points in Cartesian coordinates.
  *
  * This macro calculates the Euclidean distance between two points in
@@ -2574,6 +2621,9 @@ typedef struct {
   /*! Meteo data layout (0=[lev, lat, lon], 1=[lon, lat, lev]). */
   int met_convention;
 
+  /*! Type of coordinates for meteo data (-1=detect, 0=lat/lon [deg], 1=cartesian [m]). */
+  int met_coord_type;
+
   /*! Vertical coordinate of input meteo data
      (0=plev, 1=mlev_p_file, 2=mlev_ab_file, 3=mlev_ab_full, 4=mlev_ab_half). */
   int met_vert_coord;
@@ -3544,6 +3594,9 @@ typedef struct {
   /*! Time [s]. */
   double time;
 
+  /* Grid type:  0=lat/lon [deg], 1=cartesian [m] */
+  int coord_type;
+
   /*! Number of longitudes. */
   int nx;
 
@@ -4483,6 +4536,34 @@ void get_tropo(
  * @author Lars Hoffmann
  */
 void intpol_check_lon_lat(
+  const double *lons,
+  const int nlon,
+  const double *lats,
+  const int nlat,
+  const double lon,
+  const double lat,
+  double *lon2,
+  double *lat2);
+
+/**
+ * @brief Clamps cartesian coordinates to the valid bounds.
+ *
+ * This function constrains the given longitude and latitude values
+ * so they remain within the limits defined by the provided longitude
+ * and latitude arrays.
+ *
+ * @param[in] lons Pointer to an array of valid longitude values.
+ * @param[in] nlon Number of elements in the longitude array.
+ * @param[in] lats Pointer to an array of valid latitude values.
+ * @param[in] nlat Number of elements in the latitude array.
+ * @param[in] lon Input longitude to be checked and adjusted.
+ * @param[in] lat Input latitude to be checked and adjusted.
+ * @param[out] lon2 Pointer to the adjusted longitude.
+ * @param[out] lat2 Pointer to the adjusted latitude.
+ *
+ * @author Robin Brase
+ */
+void intpol_check_cartesian(
   const double *lons,
   const int nlon,
   const double *lats,
@@ -7376,6 +7457,27 @@ void read_met_ml2pl(
  * @author Jan Clemens
  */
 void read_met_monotonize(
+  const ctl_t * ctl,
+  met_t * met);
+
+/**
+ * @brief Configures the coordinate system of the meteorological data
+ *
+ * This function sets and validates the coord_type in the meteorological data
+ * based to the value configured by MET_COORD_TYPE.
+ * If this value is set to -1, the coordinate system if inferred from
+ * the dimension within the nc file as follows:
+ * - if a dimension called "lat" exists, use coord_type=0 (lat/lon[deg] grid)
+ * - if a dimension called "x" exists, use coord_type=1 (cartesian[m] grid)
+ * - otherwise: exit with an error mesage
+ *
+ * @param ctl A pointer to a control parameter structure.
+ * @param met A pointer to a structure containing meteorological data.
+ *
+ * @author Robin Brase
+ */
+void read_met_coord_type(
+  int ncid,
   const ctl_t * ctl,
   met_t * met);
 

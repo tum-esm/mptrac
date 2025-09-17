@@ -1,0 +1,10 @@
+NQ = 4
+QNT_NAME[0] = t
+QNT_NAME[1] = u
+QNT_NAME[2] = v
+QNT_NAME[3] = w
+METBASE = ../data/era5_utm32
+TRACER_CHEM = 0
+DIFFUSION = 1
+DT_MET = 3600.0
+T_STOP = 799380000.00

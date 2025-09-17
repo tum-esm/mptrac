@@ -6,7 +6,7 @@
 EXC = atm2grid atm_conv atm_dist atm_init atm_select atm_split atm_stat cape day2doy doy2day jsec2time met_conv met_lapse met_map met_prof met_sample met_spec met_subgrid met_zm time2jsec sedi tnat trac tropo tropo_clim tropo_sample tropo_zm wind
 
 # List of tests...
-TESTS = atm_test compress_test interoper_test met_test tools_test trac_test tropo_test
+TESTS = atm_test compress_test interoper_test met_test tools_test trac_test tropo_test dt_test coord_test
 
 # Installation directory...
 DESTDIR ?= ../bin
@@ -89,8 +89,8 @@ VERSION ?= $(shell git describe --abbrev=6 --dirty --always --tags)
 
 # Set CC and CFLAGS...
 CFLAGS += $(INCDIR) $(DEFINES) -DVERSION=\"$(VERSION)\" $(OPTI) -g
-ifeq ($(COMPILER),gcc)
-  CC=gcc
+ifneq ($(filter gcc%,$(COMPILER)),)
+  CC=$(COMPILER)
   CFLAGS += -DHAVE_INLINE -pedantic -Werror -Wall -W -Wmissing-prototypes -Wconversion -Wshadow -Wpointer-arith -Wcast-qual -Wcast-align -Wnested-externs -Wno-long-long -Wmissing-declarations -Wredundant-decls -Winline -fno-common -fshort-enums -fopenmp
 else ifeq ($(COMPILER),icx)
   CC=icx
@@ -300,7 +300,7 @@ wrapper: trac_fortran
 
 check: $(TESTS)
 
-$(TESTS) cms_test gpu_test grib_test kpp_test wrapper_test dt_test: all
+$(TESTS) cms_test gpu_test grib_test kpp_test wrapper_test: all
 	@(echo "\n===== Running \"$@\" ... =====") ; \
 	  cd ../tests/$@ ; ./run.sh \
 	  && (echo "\n===== Test \"$@\" passed! =====") \
