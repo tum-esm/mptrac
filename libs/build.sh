@@ -181,7 +181,7 @@ fi
 
 # Build zstd...
 if ${build[all]} || ${build[zstd]} ; then 
-    target="zstd-1.5.5"
+    target="zstd-1.5.7"
     unpack "$target"
     make -j $nprocs && make check \
         && cp -a lib/libzstd* "$build_dir"/lib/ \

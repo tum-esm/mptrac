@@ -28,6 +28,10 @@
 #include "kpp_chem.h"
 #endif
 
+#ifdef PARQUET
+#include "nanopq.h"
+#endif
+
 /*! State variables of GSL random number generators. */
 static gsl_rng *rng[NTHREADS];
 
@@ -5475,6 +5479,8 @@ void mptrac_read_ctl(
     ctl->atm_type_out = ctl->atm_type;
   ctl->atm_nc_level =
     (int) scan_ctl(filename, argc, argv, "ATM_NC_LEVEL", -1, "0", NULL);
+  ctl->atm_parquet_level =
+    (int) scan_ctl(filename, argc, argv, "ATM_PARQUET_LEVEL", -1, "0", NULL);
   for (int iq = 0; iq < ctl->nq; iq++)
     ctl->atm_nc_quant[iq] =
       (int) scan_ctl(filename, argc, argv, "ATM_NC_QUANT", iq, "0", NULL);
@@ -6032,6 +6038,12 @@ void mptrac_write_atm(
   else if (ctl->atm_type_out == 4)
     write_atm_clams(filename, ctl, atm);
 
+#ifdef PARQUET
+  /* Write parquet data... */
+  else if (ctl->atm_type_out == 5)
+    write_atm_parquet(filename, ctl, atm);
+#endif
+
   /* Error... */
   else
     ERRMSG("Atmospheric data type not supported!");
@@ -6139,8 +6151,12 @@ void mptrac_write_output(
       sprintf(ext, "bin");
     else if (ctl->atm_type_out == 2)
       sprintf(ext, "nc");
+    else if (ctl->atm_type_out == 5)
+      sprintf(ext, "parquet");
 
-    if (ctl->atm_dt_out < 60) {
+    if (ctl->atm_type_out == 5) {
+      sprintf(filename, "%s/%s.%s", dirname, ctl->atm_basename, ext);
+    } else if (ctl->atm_dt_out < 60) {
       sprintf(filename, "%s/%s_%04d_%02d_%02d_%02d_%02d_%02d.%s",
 	      dirname, ctl->atm_basename, year, mon, day, hour, min, sec,
 	      ext);
@@ -11576,6 +11592,48 @@ void write_atm_nc(
   /* Close file... */
   NC(nc_close(ncid));
 }
+
+/*****************************************************************************/
+
+#ifdef PARQUET
+void write_atm_parquet(
+  const char *filename,
+  const ctl_t *ctl,
+  const atm_t *atm) {
+
+  if (ctl->nq + 4 > NANOPQ_MAX_COLUMNS)
+    ERRMSG("Too many parquet columns!");
+
+  NanopqInputColumn input_columns[NANOPQ_MAX_COLUMNS];
+
+  input_columns[0].name = "time";
+  input_columns[0].data = atm->time;
+
+  input_columns[1].name = "pressure";
+  input_columns[1].data = atm->p;
+
+  input_columns[2].name = (ctl->met_coord_type == 0) ? "longitude" : "x";
+  input_columns[2].data = atm->lon;
+
+  input_columns[3].name = (ctl->met_coord_type == 0) ? "latitude" : "y";
+  input_columns[3].data = atm->lat;
+
+  for (int iq = 0; iq < ctl->nq; iq++) {
+    input_columns[iq + 4].name = ctl->qnt_name[iq];
+    input_columns[iq + 4].data = atm->q[iq];
+  }
+
+  const int64_t num_rows = (int64_t) atm->np;
+  const int64_t num_cols = (int64_t) ctl->nq + 4;
+
+  NanopqWriteOptions options = {
+    .compression_level = ctl->atm_parquet_level,
+    .block_size = 1024 * 1024 * 128
+  };
+
+  nanopq_write_file(filename, num_rows, input_columns, num_cols, options);
+}
+#endif
 
 /*****************************************************************************/
 

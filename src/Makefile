@@ -71,6 +71,9 @@ SZ3 ?= 0
 # Enable ecCodes for reading GRIB data...
 ECCODES ?= 0
 
+# Enable nanopq support for writing parquet files...
+PARQUET ?= 0
+
 # Enable KPP chemistry module (experimental)...
 KPP ?= 0
 
@@ -251,6 +254,13 @@ ifeq ($(ECCODES),1)
   CFLAGS += -DECCODES
 endif
 
+# Parquet output support...
+MPTRAC_OBJS = mptrac.o
+ifeq ($(PARQUET),1)
+  CFLAGS += -DPARQUET -I ../libs/nanopq
+  MPTRAC_OBJS += nanopq.o
+endif
+
 # Static compilation...
 ifeq ($(STATIC),1)
   ifeq ($(CMS),1)
@@ -284,17 +294,20 @@ endif
 all: $(EXC)
 	rm -f *~
 
-$(EXC): %: %.c mptrac.o
-	$(CC) $(CFLAGS) -o $@ $< mptrac.o $(LDFLAGS)
+$(EXC): %: %.c $(MPTRAC_OBJS)
+	$(CC) $(CFLAGS) -o $@ $< $(MPTRAC_OBJS) $(LDFLAGS)
 
 mptrac.o: mptrac.c mptrac.h Makefile
 	$(CC) $(CFLAGS) -c -o mptrac.o mptrac.c
 
+nanopq.o: ../libs/nanopq/nanopq.c ../libs/nanopq/nanopq.h Makefile
+	$(CC) $(CFLAGS) -c -o nanopq.o ../libs/nanopq/nanopq.c
+
 mptrac_fortran.o: mptrac_fortran.f90 Makefile
 	$(FC) $(FCFLAGS) -o mptrac_fortran.o -c mptrac_fortran.f90 $(LDFLAGS)
 
-trac_fortran: trac_fortran.f90 mptrac_fortran.o mptrac.o
-	$(FC) $(FCFLAGS) -o trac_fortran trac_fortran.f90 mptrac_fortran.o mptrac.o $(LDFLAGS)
+trac_fortran: trac_fortran.f90 mptrac_fortran.o $(MPTRAC_OBJS)
+	$(FC) $(FCFLAGS) -o trac_fortran trac_fortran.f90 mptrac_fortran.o $(MPTRAC_OBJS) $(LDFLAGS)
 
 wrapper: trac_fortran
 

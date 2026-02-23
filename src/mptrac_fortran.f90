@@ -374,6 +374,7 @@ MODULE mptrac_struct
      INTEGER(c_int) :: atm_type
      INTEGER(c_int) :: atm_type_out
      INTEGER(c_int) :: atm_nc_level
+     INTEGER(c_int) :: atm_parquet_level
      INTEGER(c_int), DIMENSION(nqq) :: atm_nc_quant
      INTEGER(c_int) :: obs_type
      CHARACTER(c_char), DIMENSION(length) :: csi_basename

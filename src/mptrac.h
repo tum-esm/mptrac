@@ -2108,7 +2108,7 @@
  * @author Lars Hoffmann
  */
 #define PRINT(format, var)						\
-  printf("Print (%s, %s, l%d): %s= "format"\n",				\
+  printf("Print (%s, %s, l%d): %s= " format "\n",			\
 	 __FILE__, __func__, __LINE__, #var, var);
 
 /* ------------------------------------------------------------
@@ -3084,12 +3084,15 @@ typedef struct {
   int atm_type;
 
   /*! Type of atmospheric data files for output
-     (-1=same as ATM_TYPE, 0=ASCII, 1=binary, 2=netCDF,
-     3=CLaMS_traj, 4=CLaMS_pos). */
+   (-1=same as ATM_TYPE, 0=ASCII, 1=binary, 2=netCDF,
+     3=CLaMS_traj, 4=CLaMS_pos, 5=parquet). */
   int atm_type_out;
 
   /*! zlib compression level of netCDF atmospheric data files (0=off). */
   int atm_nc_level;
+
+  /*! zstd compression level of parquet atmospheric data files (0=off). */
+  int atm_parquet_level;
 
   /*! Number of digits for quantization of netCDF atmospheric data files (0=off). */
   int atm_nc_quant[NQ];
@@ -6516,6 +6519,7 @@ void mptrac_run_timestep(
  *   - netCDF (`atm_type_out == 2`): Calls `write_atm_nc`.
  *   - CLaMS trajectory data (`atm_type_out == 3`): Calls `write_atm_clams_traj`.
  *   - CLaMS position data (`atm_type_out == 4`): Calls `write_atm_clams`.
+ *   - Parquet (`atm_type_out == 5`): Calls `write_atm_parquet` when compiled with `PARQUET=1`.
  * - If the `atm_type_out` value is not supported, triggers an error message.
  * - Logs various statistics about the atmospheric data, including the number of particles,
  *   time range, altitude range, pressure range, longitude range, and latitude range.
@@ -8716,6 +8720,30 @@ void write_atm_nc(
   const char *filename,
   const ctl_t * ctl,
   const atm_t * atm);
+
+#ifdef PARQUET
+/**
+ * @brief Writes air parcel data to a parquet file.
+ *
+ * The `write_atm_parquet` function writes the air parcel data stored
+ * in the `atm` structure to a parquet file specified by `filename`.
+ * The parquet writer is provided by nanopq.
+ *
+ * @param filename A string representing the name of the file to write the data to.
+ * @param ctl A pointer to a `ctl_t` structure containing control parameters.
+ * @param atm A pointer to an `atm_t` structure containing atmospheric data.
+ *
+ * The function performs the following steps:
+ * - Creates the parquet file if it does not yet exist.
+ * - Appends data to the parquet file if it already exists.
+ *
+ * @author Lars Hoffmann
+ */
+void write_atm_parquet(
+  const char *filename,
+  const ctl_t * ctl,
+  const atm_t * atm);
+#endif
 
 /**
  * @brief Writes Critical Success Index (CSI) data to a file.
