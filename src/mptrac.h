@@ -8737,7 +8737,7 @@ void write_atm_nc(
  * - Creates the parquet file if it does not yet exist.
  * - Appends data to the parquet file if it already exists.
  *
- * @author Lars Hoffmann
+ * @author Robin Brase
  */
 void write_atm_parquet(
   const char *filename,
